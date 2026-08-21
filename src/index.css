@@ -1,0 +1,29 @@
+@import 'tailwindcss';
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  background: #020617;
+  color: #f1f5f9;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: none;
+}
+
+/* Três classes em vez da mesma sopa de utilitários repetida em quatro telas. */
+.input {
+  @apply w-full rounded-xl border border-slate-800 bg-slate-900 px-4 py-3 text-base
+    text-slate-100 outline-none placeholder:text-slate-500 focus:border-slate-600;
+}
+
+.btn {
+  @apply rounded-xl bg-emerald-600 px-4 py-3 font-medium text-white
+    active:bg-emerald-700 disabled:opacity-50;
+}
+
+.card {
+  @apply rounded-2xl border border-slate-800 bg-slate-900/60;
+}
