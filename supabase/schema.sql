@@ -7,6 +7,10 @@
 --  DROP aqui, para não existir um arquivo capaz de apagar a casa.)
 -- ============================================================
 
+-- Fuso do banco. O padrão do Supabase é UTC, e current_date em UTC faz a
+-- recorrência errar o dia quando alguém conclui uma tarefa depois das 21h.
+alter database postgres set timezone to 'America/Sao_Paulo';
+
 -- ---------- casa e moradores ----------
 
 create table households (
@@ -19,7 +23,7 @@ create table households (
 create table household_members (
   household_id uuid not null references households(id) on delete cascade,
   user_id      uuid not null references auth.users(id) on delete cascade,
-  display_name text not null,
+  display_name text not null check (length(trim(display_name)) > 0),
   joined_at    timestamptz not null default now(),
   primary key (household_id, user_id)
 );
@@ -69,6 +73,20 @@ language plpgsql as $$
 declare step interval;
 begin
   if new.done_at is not null and old.done_at is null and new.recurrence is not null then
+
+    -- Já existe uma ocorrência aberta desta mesma tarefa? Não cria outra.
+    -- É o que impede a multiplicação quando alguém desmarca e remarca.
+    if exists (
+      select 1 from tasks
+      where household_id = new.household_id
+        and title        = new.title
+        and recurrence   = new.recurrence
+        and done_at is null
+        and id <> new.id
+    ) then
+      return new;
+    end if;
+
     step := case new.recurrence
               when 'daily'   then interval '1 day'
               when 'weekly'  then interval '7 days'
@@ -88,6 +106,25 @@ end $$;
 create trigger tasks_recurrence after update on tasks
   for each row execute function spawn_next_occurrence();
 
+-- Desmarcar desfaz o efeito da conclusão: a ocorrência gerada some junto, senão
+-- sobra órfã na lista. BEFORE, para a linha desmarcada voltar a ser a única pendente.
+create or replace function unspawn_occurrence() returns trigger
+language plpgsql as $$
+begin
+  if new.done_at is null and old.done_at is not null and new.recurrence is not null then
+    delete from tasks
+    where household_id = new.household_id
+      and title        = new.title
+      and recurrence   = new.recurrence
+      and done_at is null
+      and id <> new.id;
+  end if;
+  return new;
+end $$;
+
+create trigger tasks_unrecurrence before update on tasks
+  for each row execute function unspawn_occurrence();
+
 -- ---------- RLS ----------
 
 alter table households        enable row level security;
@@ -101,8 +138,14 @@ create policy "membro lê a casa" on households
 create policy "membro vê os outros membros" on household_members
   for select using (household_id in (select my_households()));
 
-create policy "só eu saio da casa" on household_members
-  for delete using (user_id = auth.uid());
+-- Renomear: só a própria linha. Remover: qualquer morador remove qualquer morador,
+-- inclusive a si mesmo. Mesma decisão dos itens: casa não é empresa.
+create policy "eu mudo meu nome" on household_members
+  for update using      (user_id = auth.uid())
+              with check (user_id = auth.uid());
+
+create policy "morador remove morador" on household_members
+  for delete using (household_id in (select my_households()));
 
 -- Casa não é empresa: quem mora edita e apaga qualquer item. Decisão consciente.
 -- Para "só quem criou apaga", separe em policies for select/insert/update e

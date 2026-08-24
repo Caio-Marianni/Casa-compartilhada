@@ -1,46 +1,46 @@
 import { useState } from 'react'
-import { Login, Onboarding } from './Auth'
+import { Login, NovaSenha, Onboarding } from './Auth'
+import { Household } from './Household'
 import { Shopping } from './Shopping'
 import { Tasks } from './Tasks'
-import { supabase } from './supabase'
 import { useHousehold } from './useHousehold'
 
+const ABAS = ['compras', 'tarefas', 'casa'] as const
+
 export default function App() {
-  const { session, ready, house, members, nameOf, refresh } = useHousehold()
-  // Duas telas não precisam de router: uma URL só, e o botão voltar do celular
+  const { session, ready, house, members, nameOf, refresh, recovering, doneRecovering } =
+    useHousehold()
+  // Três telas não precisam de router: uma URL só, e o botão voltar do celular
   // continua fazendo o que o usuário espera (sair do app).
-  const [tab, setTab] = useState<'compras' | 'tarefas'>('compras')
-  const [copiado, setCopiado] = useState(false)
+  const [tab, setTab] = useState<(typeof ABAS)[number]>('compras')
+  const [erro, setErro] = useState<string | null>(null)
 
   if (!ready) return <p className="p-8 text-center text-slate-500">carregando…</p>
+  // Antes do !session de propósito: numa recuperação a sessão JÁ existe, e sem esta
+  // linha a pessoa entraria no app com a senha antiga ainda valendo.
+  if (recovering) return <NovaSenha onDone={doneRecovering} />
   if (!session) return <Login />
   if (!house) return <Onboarding onDone={refresh} />
 
-  function copiarCodigo() {
-    void navigator.clipboard.writeText(house!.invite_code)
-    setCopiado(true)
-    setTimeout(() => setCopiado(false), 1500)
-  }
-
   return (
     <div className="mx-auto flex min-h-dvh max-w-md flex-col">
-      <header className="flex items-center gap-3 px-4 pb-3 pt-[calc(1rem+env(safe-area-inset-top))]">
-        <div className="flex-1">
-          <h1 className="text-lg font-semibold leading-tight">{house.name}</h1>
-          <button onClick={copiarCodigo} className="text-xs text-slate-500">
-            {copiado ? 'código copiado!' : `convite: ${house.invite_code} · copiar`}
-          </button>
-        </div>
+      {erro && (
         <button
-          onClick={() => void supabase.auth.signOut()}
-          className="text-sm text-slate-500"
+          onClick={() => setErro(null)}
+          className="fixed inset-x-0 top-0 z-50 bg-red-900/95 px-4 py-3 text-left text-sm text-red-100 backdrop-blur"
         >
-          sair
+          {erro}
+          <span className="ml-2 opacity-60">· toque para fechar</span>
         </button>
+      )}
+
+      <header className="px-4 pb-3 pt-[calc(1rem+env(safe-area-inset-top))]">
+        {/* Convite e "sair" moraram aqui até existir a aba casa; lá eles cabem melhor. */}
+        <h1 className="text-lg font-semibold leading-tight">{house.name}</h1>
       </header>
 
       <nav className="mx-4 mb-4 flex gap-1 rounded-xl bg-slate-900 p-1 text-sm">
-        {(['compras', 'tarefas'] as const).map((t) => (
+        {ABAS.map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -53,10 +53,27 @@ export default function App() {
         ))}
       </nav>
 
-      {tab === 'compras' ? (
-        <Shopping houseId={house.id} me={session.user.id} nameOf={nameOf} />
-      ) : (
-        <Tasks houseId={house.id} me={session.user.id} members={members} nameOf={nameOf} />
+      {tab === 'compras' && (
+        <Shopping houseId={house.id} me={session.user.id} nameOf={nameOf} onErro={setErro} />
+      )}
+      {tab === 'tarefas' && (
+        <Tasks
+          houseId={house.id}
+          me={session.user.id}
+          members={members}
+          nameOf={nameOf}
+          onErro={setErro}
+        />
+      )}
+      {tab === 'casa' && (
+        <Household
+          house={house}
+          members={members}
+          me={session.user.id}
+          email={session.user.email}
+          onErro={setErro}
+          refresh={refresh}
+        />
       )}
     </div>
   )

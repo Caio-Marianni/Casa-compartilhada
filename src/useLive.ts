@@ -1,11 +1,14 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { supabase } from './supabase'
 
 /**
  * Lê uma tabela e refaz a query inteira a cada mudança que o Postgres empurrar.
  *
- * Refazer o select em vez de aplicar o delta na lista: são dezenas de linhas, não
- * milhares, e elimina a classe de bug em que a tela discorda do banco.
+ * Refazer o select em vez de aplicar o delta: são dezenas de linhas, não milhares,
+ * e elimina a classe de bug em que a tela discorda do banco.
+ *
+ * Devolve `setRows` e `refresh` para a tela poder atualizar na hora (otimista) e
+ * voltar atrás com a verdade do servidor se a escrita falhar.
  */
 export function useLive<T>(
   table: string,
@@ -15,17 +18,18 @@ export function useLive<T>(
   const [rows, setRows] = useState<T[]>([])
   const [ready, setReady] = useState(false)
 
-  // `load` é recriada a cada render, mas só depende de houseId — por isso as deps
-  // são [table, houseId] e não [load]. Trocar de casa remonta a subscription.
-  useEffect(() => {
-    let alive = true
-    const refresh = () =>
-      load().then(({ data }) => {
-        if (!alive) return
-        setRows(data ?? [])
-        setReady(true)
-      })
+  // `load` é recriada a cada render; o ref mantém `refresh` estável (deps vazias)
+  // sem congelar uma closure velha.
+  const loadRef = useRef(load)
+  loadRef.current = load
 
+  const refresh = useCallback(async () => {
+    const { data } = await loadRef.current()
+    setRows(data ?? [])
+    setReady(true)
+  }, [])
+
+  useEffect(() => {
     void refresh()
     const channel = supabase
       .channel(`${table}:${houseId}`)
@@ -33,10 +37,9 @@ export function useLive<T>(
       .subscribe()
 
     return () => {
-      alive = false
       void supabase.removeChannel(channel)
     }
-  }, [table, houseId])
+  }, [table, houseId, refresh])
 
-  return { rows, ready }
+  return { rows, ready, setRows, refresh }
 }

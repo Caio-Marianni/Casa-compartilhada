@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { supabase, type Item } from './supabase'
+import { run, supabase, type Item } from './supabase'
 import { useLive } from './useLive'
 
 const DIAS_VISIVEIS = 2 // comprados mais velhos que isso saem da tela (e da query)
@@ -8,12 +8,14 @@ export function Shopping({
   houseId,
   me,
   nameOf,
+  onErro,
 }: {
   houseId: string
   me: string
   nameOf: (id: string | null) => string
+  onErro: (msg: string) => void
 }) {
-  const { rows, ready } = useLive<Item>('shopping_items', houseId, () => {
+  const { rows, ready, setRows, refresh } = useLive<Item>('shopping_items', houseId, () => {
     const desde = new Date(Date.now() - DIAS_VISIVEIS * 864e5).toISOString()
     return supabase
       .from('shopping_items')
@@ -25,6 +27,7 @@ export function Shopping({
 
   const [name, setName] = useState('')
   const [qty, setQty] = useState('')
+  const [verComprados, setVerComprados] = useState(false)
 
   const pendentes = rows.filter((i) => !i.bought_at)
   const comprados = rows.filter((i) => i.bought_at)
@@ -35,23 +38,35 @@ export function Shopping({
     if (!nome) return
     setName('')
     setQty('')
-    const { error } = await supabase
-      .from('shopping_items')
-      .insert({ household_id: houseId, name: nome, qty: qty.trim() || null })
-    if (error) alert(error.message)
+    // sem otimismo aqui: o campo esvaziar já é o retorno visual, e inventar um id
+    // temporário para reconciliar depois custa mais do que os ~200 ms que economiza
+    await run(
+      supabase
+        .from('shopping_items')
+        .insert({ household_id: houseId, name: nome, qty: qty.trim() || null }),
+      onErro,
+    )
   }
 
-  const toggle = (i: Item) =>
-    supabase
-      .from('shopping_items')
-      .update(
-        i.bought_at
-          ? { bought_at: null, bought_by: null }
-          : { bought_at: new Date().toISOString(), bought_by: me },
-      )
-      .eq('id', i.id)
+  // Otimista: a tela muda no toque e o servidor confirma depois. Se falhar,
+  // `refresh()` traz a verdade de volta — o realtime não avisa sobre o que não mudou.
+  async function toggle(i: Item) {
+    const novo = i.bought_at
+      ? { bought_at: null, bought_by: null }
+      : { bought_at: new Date().toISOString(), bought_by: me }
+    setRows((rs) => rs.map((r) => (r.id === i.id ? { ...r, ...novo } : r)))
+    const ok = await run(
+      supabase.from('shopping_items').update(novo).eq('id', i.id),
+      onErro,
+    )
+    if (!ok) void refresh()
+  }
 
-  const remove = (i: Item) => supabase.from('shopping_items').delete().eq('id', i.id)
+  async function remove(i: Item) {
+    setRows((rs) => rs.filter((r) => r.id !== i.id))
+    const ok = await run(supabase.from('shopping_items').delete().eq('id', i.id), onErro)
+    if (!ok) void refresh()
+  }
 
   return (
     <div className="flex flex-1 flex-col">
@@ -84,23 +99,30 @@ export function Shopping({
         ))}
 
         {comprados.length > 0 && (
-          <li className="pt-6 pb-1 text-xs uppercase tracking-wide text-slate-500">
-            comprados
+          <li className="pt-6 pb-1">
+            <button
+              onClick={() => setVerComprados(!verComprados)}
+              className="text-xs uppercase tracking-wide text-slate-500"
+            >
+              {verComprados ? '▾' : '▸'} {comprados.length} comprado
+              {comprados.length > 1 ? 's' : ''}
+            </button>
           </li>
         )}
-        {comprados.map((i) => (
-          <li key={i.id} className="flex items-center gap-3 px-4 py-2 opacity-50">
-            <button
-              onClick={() => void toggle(i)}
-              aria-label={`desmarcar ${i.name}`}
-              className="size-6 shrink-0 rounded-full bg-emerald-600 text-center text-sm leading-6"
-            >
-              ✓
-            </button>
-            <span className="flex-1 line-through">{i.name}</span>
-            <span className="text-xs text-slate-500">{nameOf(i.bought_by)}</span>
-          </li>
-        ))}
+        {verComprados &&
+          comprados.map((i) => (
+            <li key={i.id} className="flex items-center gap-3 px-4 py-2 opacity-50">
+              <button
+                onClick={() => void toggle(i)}
+                aria-label={`desmarcar ${i.name}`}
+                className="size-6 shrink-0 rounded-full bg-emerald-600 text-center text-sm leading-6"
+              >
+                ✓
+              </button>
+              <span className="flex-1 line-through">{i.name}</span>
+              <span className="text-xs text-slate-500">{nameOf(i.bought_by)}</span>
+            </li>
+          ))}
       </ul>
 
       {/* Fixo embaixo: é onde o dedo já está. */}

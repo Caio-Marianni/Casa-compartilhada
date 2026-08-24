@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { supabase, type Recurrence, type Task } from './supabase'
+import { run, supabase, type Recurrence, type Task } from './supabase'
 import type { Member } from './useHousehold'
 import { useLive } from './useLive'
 
@@ -11,7 +11,9 @@ const RECORRENCIA: Record<Recurrence, string> = {
   monthly: 'todo mês',
 }
 
-const hoje = () => new Date().toISOString().slice(0, 10)
+// Data local, não UTC: toISOString() vira o dia às 21h no Brasil e faria toda tarefa
+// de hoje aparecer "atrasada" à noite. 'sv-SE' é o locale que formata como YYYY-MM-DD.
+const hoje = () => new Date().toLocaleDateString('sv-SE')
 const ddmm = (iso: string) => iso.slice(8, 10) + '/' + iso.slice(5, 7)
 
 export function Tasks({
@@ -19,13 +21,15 @@ export function Tasks({
   me,
   members,
   nameOf,
+  onErro,
 }: {
   houseId: string
   me: string
   members: Member[]
   nameOf: (id: string | null) => string
+  onErro: (msg: string) => void
 }) {
-  const { rows, ready } = useLive<Task>('tasks', houseId, () => {
+  const { rows, ready, setRows, refresh } = useLive<Task>('tasks', houseId, () => {
     const desde = new Date(Date.now() - DIAS_VISIVEIS * 864e5).toISOString()
     return supabase
       .from('tasks')
@@ -35,15 +39,22 @@ export function Tasks({
   })
 
   const [open, setOpen] = useState(false)
+  const [verFeitas, setVerFeitas] = useState(false)
   const [title, setTitle] = useState('')
   const [due, setDue] = useState('')
   const [recurrence, setRecurrence] = useState('')
   const [assignee, setAssignee] = useState('')
 
-  // sem data vai para o fim da lista
-  const pendentes = rows
-    .filter((t) => !t.done_at)
+  // Agenda separada do que dá para fazer agora. Sem isso, concluir uma tarefa
+  // recorrente faz a próxima ocorrência reaparecer no topo da lista ativa, e ela
+  // parece a mesma tarefa "voltando" — que foi como este split nasceu.
+  const hj = hoje()
+  const agora = rows
+    .filter((t) => !t.done_at && (!t.due_date || t.due_date <= hj))
     .sort((a, b) => (a.due_date ?? '9999').localeCompare(b.due_date ?? '9999'))
+  const proximas = rows
+    .filter((t) => !t.done_at && t.due_date && t.due_date > hj)
+    .sort((a, b) => a.due_date!.localeCompare(b.due_date!))
   const feitas = rows
     .filter((t) => t.done_at)
     .sort((a, b) => b.done_at!.localeCompare(a.done_at!))
@@ -53,93 +64,102 @@ export function Tasks({
     const t = title.trim()
     if (!t) return
     setTitle('')
-    const { error } = await supabase.from('tasks').insert({
-      household_id: houseId,
-      title: t,
-      due_date: due || null,
-      recurrence: recurrence || null,
-      assignee: assignee || null,
-    })
-    if (error) alert(error.message)
+    await run(
+      supabase.from('tasks').insert({
+        household_id: houseId,
+        title: t,
+        due_date: due || null,
+        recurrence: recurrence || null,
+        assignee: assignee || null,
+      }),
+      onErro,
+    )
   }
 
   // Concluir dispara o trigger no banco: se for recorrente, a próxima ocorrência
-  // aparece sozinha pelo realtime. Nenhum código de recorrência aqui.
-  const concluir = (t: Task) =>
-    supabase
-      .from('tasks')
-      .update({ done_at: new Date().toISOString(), done_by: me })
-      .eq('id', t.id)
+  // aparece sozinha pelo realtime, já em "próximas". Nenhum código de recorrência aqui.
+  // A marcação é otimista; a ocorrência nova continua vindo pelo servidor.
+  async function concluir(t: Task) {
+    const novo = { done_at: new Date().toISOString(), done_by: me }
+    setRows((rs) => rs.map((r) => (r.id === t.id ? { ...r, ...novo } : r)))
+    const ok = await run(supabase.from('tasks').update(novo).eq('id', t.id), onErro)
+    if (!ok) void refresh()
+  }
 
-  // ponytail: desfazer não apaga a próxima ocorrência que o trigger já criou.
-  // Se incomodar, apague a duplicata na mão — ou mova o trigger para AFTER com
-  // uma checagem de "já existe pendente igual".
-  const desfazer = (t: Task) =>
-    supabase.from('tasks').update({ done_at: null, done_by: null }).eq('id', t.id)
+  // Desmarcar leva junto a ocorrência que a conclusão gerou (trigger
+  // `tasks_unrecurrence`), então a lista não acumula linhas idênticas.
+  async function desfazer(t: Task) {
+    const novo = { done_at: null, done_by: null }
+    setRows((rs) => rs.map((r) => (r.id === t.id ? { ...r, ...novo } : r)))
+    const ok = await run(supabase.from('tasks').update(novo).eq('id', t.id), onErro)
+    if (!ok) void refresh()
+  }
 
-  const remove = (t: Task) => supabase.from('tasks').delete().eq('id', t.id)
+  async function remove(t: Task) {
+    setRows((rs) => rs.filter((r) => r.id !== t.id))
+    const ok = await run(supabase.from('tasks').delete().eq('id', t.id), onErro)
+    if (!ok) void refresh()
+  }
 
   return (
     <div className="flex flex-1 flex-col">
       <ul className="flex-1 space-y-2 px-4 pb-44">
         {!ready && <p className="py-8 text-center text-slate-500">carregando…</p>}
-        {ready && pendentes.length === 0 && (
-          <p className="py-8 text-center text-slate-500">Nenhuma tarefa pendente. Raro.</p>
+        {ready && agora.length === 0 && (
+          <p className="py-8 text-center text-slate-500">Nada para hoje.</p>
         )}
 
-        {pendentes.map((t) => {
-          const atrasada = t.due_date != null && t.due_date < hoje()
-          return (
-            <li key={t.id} className="card flex items-center gap-3 px-4 py-3">
-              <button
-                onClick={() => void concluir(t)}
-                aria-label={`concluir ${t.title}`}
-                className="size-6 shrink-0 rounded-md border-2 border-slate-600 active:bg-emerald-600"
-              />
-              <div className="flex-1">
-                <span className="text-base">{t.title}</span>
-                <span className="block text-xs text-slate-500">
-                  {t.due_date && (
-                    <span className={atrasada ? 'font-medium text-red-400' : ''}>
-                      {ddmm(t.due_date)}
-                      {atrasada && ' · atrasada'}
-                    </span>
-                  )}
-                  {t.due_date && (t.recurrence || t.assignee) && ' · '}
-                  {t.recurrence && RECORRENCIA[t.recurrence]}
-                  {t.recurrence && t.assignee && ' · '}
-                  {t.assignee && nameOf(t.assignee)}
-                </span>
-              </div>
-              <button
-                onClick={() => void remove(t)}
-                aria-label={`apagar ${t.title}`}
-                className="px-2 text-xl text-slate-600"
-              >
-                ×
-              </button>
-            </li>
-          )
-        })}
+        {agora.map((t) => (
+          <Linha
+            key={t.id}
+            t={t}
+            nameOf={nameOf}
+            onConcluir={() => void concluir(t)}
+            onRemover={() => void remove(t)}
+          />
+        ))}
+
+        {proximas.length > 0 && (
+          <li className="pt-6 pb-1 text-xs uppercase tracking-wide text-slate-500">
+            próximas
+          </li>
+        )}
+        {proximas.map((t) => (
+          <Linha
+            key={t.id}
+            t={t}
+            futura
+            nameOf={nameOf}
+            onConcluir={() => void concluir(t)}
+            onRemover={() => void remove(t)}
+          />
+        ))}
 
         {feitas.length > 0 && (
-          <li className="pt-6 pb-1 text-xs uppercase tracking-wide text-slate-500">
-            últimos {DIAS_VISIVEIS} dias
+          <li className="pt-6 pb-1">
+            <button
+              onClick={() => setVerFeitas(!verFeitas)}
+              className="text-xs uppercase tracking-wide text-slate-500"
+            >
+              {verFeitas ? '▾' : '▸'} {feitas.length} concluída
+              {feitas.length > 1 ? 's' : ''} · {DIAS_VISIVEIS} dias
+            </button>
           </li>
         )}
-        {feitas.map((t) => (
-          <li key={t.id} className="flex items-center gap-3 px-4 py-2 opacity-50">
-            <button
-              onClick={() => void desfazer(t)}
-              aria-label={`desmarcar ${t.title}`}
-              className="size-6 shrink-0 rounded-md bg-emerald-600 text-center text-sm leading-6"
-            >
-              ✓
-            </button>
-            <span className="flex-1 line-through">{t.title}</span>
-            <span className="text-xs text-slate-500">{nameOf(t.done_by)}</span>
-          </li>
-        ))}
+        {verFeitas &&
+          feitas.map((t) => (
+            <li key={t.id} className="flex items-center gap-3 px-4 py-2 opacity-50">
+              <button
+                onClick={() => void desfazer(t)}
+                aria-label={`desmarcar ${t.title}`}
+                className="size-6 shrink-0 rounded-md bg-emerald-600 text-center text-sm leading-6"
+              >
+                ✓
+              </button>
+              <span className="flex-1 line-through">{t.title}</span>
+              <span className="text-xs text-slate-500">{nameOf(t.done_by)}</span>
+            </li>
+          ))}
       </ul>
 
       <form
@@ -202,5 +222,52 @@ export function Tasks({
         </div>
       </form>
     </div>
+  )
+}
+
+function Linha({
+  t,
+  futura,
+  nameOf,
+  onConcluir,
+  onRemover,
+}: {
+  t: Task
+  futura?: boolean
+  nameOf: (id: string | null) => string
+  onConcluir: () => void
+  onRemover: () => void
+}) {
+  const atrasada = !futura && t.due_date != null && t.due_date < hoje()
+  return (
+    <li className={`card flex items-center gap-3 px-4 py-3 ${futura ? 'opacity-60' : ''}`}>
+      <button
+        onClick={onConcluir}
+        aria-label={`concluir ${t.title}`}
+        className="size-6 shrink-0 rounded-md border-2 border-slate-600 active:bg-emerald-600"
+      />
+      <div className="flex-1">
+        <span className="text-base">{t.title}</span>
+        <span className="block text-xs text-slate-500">
+          {t.due_date && (
+            <span className={atrasada ? 'font-medium text-red-400' : ''}>
+              {ddmm(t.due_date)}
+              {atrasada && ' · atrasada'}
+            </span>
+          )}
+          {t.due_date && (t.recurrence || t.assignee) && ' · '}
+          {t.recurrence && RECORRENCIA[t.recurrence]}
+          {t.recurrence && t.assignee && ' · '}
+          {t.assignee && nameOf(t.assignee)}
+        </span>
+      </div>
+      <button
+        onClick={onRemover}
+        aria-label={`apagar ${t.title}`}
+        className="px-2 text-xl text-slate-600"
+      >
+        ×
+      </button>
+    </li>
   )
 }

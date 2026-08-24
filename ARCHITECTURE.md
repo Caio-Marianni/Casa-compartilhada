@@ -13,9 +13,11 @@ PWA mobile-first + Supabase. Custo: R$ 0 (free tier dos dois).
 | Estado | `useState` + realtime do Supabase | O servidor empurra a mudança; não há cache para sincronizar. Sem Redux/Zustand/TanStack Query. |
 | Backend | Supabase (Postgres + Auth + Realtime) | Banco, login, tempo real e regras de acesso sem servidor para manter. |
 | Login | Magic link por e-mail | Ninguém esquece senha, você não guarda hash de ninguém. |
+| Sessão | Token no `localStorage`, sem expirar por inatividade, JWT de 1 semana | Ter que pedir link de novo é o que faz o morador desistir do app. Ver "Sessão". |
 | Entrada na casa | Código de convite (`join_household`) | Você não precisa cadastrar gente na mão para sempre. |
 | Deploy | Vercel (ou Netlify), free | `git push` publica. |
 | Multi-casa | Coluna `household_id` desde já, produto de uma casa só | Virar multi-casa depois não exige migração — só telas. |
+| Fuso | Banco em `America/Sao_Paulo`, datas do cliente via `toLocaleDateString('sv-SE')` | O padrão é UTC nos dois lados. Sem isso, das 21h em diante toda tarefa de hoje vira "atrasada" e a recorrência erra o dia. |
 
 **Não vai ter em v1 (de propósito):** estoque, melhorias da casa, divisão de despesas, push
 notification, escrita offline, papéis/permissões. Nada disso muda o schema abaixo — são
@@ -26,13 +28,17 @@ tabelas novas ou tela nova.
 ```
 src/
   main.tsx          bootstrap
-  App.tsx           roteamento por aba (compras | tarefas), sem router
-  supabase.ts       cliente
+  App.tsx           roteamento por aba (compras | tarefas | casa), sem router
+  Auth.tsx          entrar / criar conta / nova senha + criar/entrar na casa
+  supabase.ts       cliente + sessão longa
   useHousehold.ts   sessão + qual casa + nome dos membros
+  useLive.ts        select + realtime de uma tabela
   Shopping.tsx      lista de compras
   Tasks.tsx         tarefas
+  Household.tsx     moradores: convite, renomear, remover
 supabase/
-  schema.sql        tabelas + RLS + funções
+  schema.sql        tabelas + RLS + funções (instalação nova)
+  migrations/       o que mudou depois; rode em ordem
   check.sql         asserts (ver "Verificação")
 ```
 
@@ -63,7 +69,7 @@ create table households (
 create table household_members (
   household_id uuid not null references households(id) on delete cascade,
   user_id      uuid not null references auth.users(id) on delete cascade,
-  display_name text not null,
+  display_name text not null check (length(trim(display_name)) > 0),
   joined_at    timestamptz not null default now(),
   primary key (household_id, user_id)
 );
@@ -138,8 +144,12 @@ create policy "membro lê a casa" on households
 create policy "membro vê os outros membros" on household_members
   for select using (household_id in (select my_households()));
 
-create policy "só eu saio da casa" on household_members
-  for delete using (user_id = auth.uid());
+create policy "eu mudo meu nome" on household_members
+  for update using      (user_id = auth.uid())
+              with check (user_id = auth.uid());
+
+create policy "morador remove morador" on household_members
+  for delete using (household_id in (select my_households()));
 
 -- Casa não é empresa: quem mora edita e apaga qualquer item. Decisão consciente.
 create policy "itens da minha casa" on shopping_items
@@ -183,8 +193,19 @@ alter publication supabase_realtime add table shopping_items, tasks;
 
 ## Fluxo do app
 
-**Primeiro acesso:** magic link → `useHousehold` consulta `household_members`. Sem casa →
-tela única com "criar casa" ou "entrar com código" + nome de exibição. Com casa → app.
+**Primeiro acesso:** criar conta (e-mail + senha) → `useHousehold` consulta
+`household_members`. Sem casa → tela única com "criar casa" ou "entrar com código" + nome
+de exibição. Com casa → app.
+
+**Login por senha, não magic link.** O serviço de e-mail embutido do Supabase manda 2
+e-mails por hora no projeto inteiro, e um app doméstico não pode depender disso para
+abrir. Com senha, entrar não manda e-mail nenhum. Sobrou e-mail em dois lugares raros:
+confirmar conta nova (se "Confirm email" estiver ligado no painel) e recuperar senha.
+
+**Recuperar senha:** `resetPasswordForEmail` → o link volta com `type=recovery` no hash →
+`useHousehold` marca `recovering` → App mostra `NovaSenha` **antes** do guard de sessão,
+porque numa recuperação a sessão já existe. Sem isso a pessoa cairia no app com a senha
+antiga ainda valendo e nunca trocaria nada.
 
 **Tela de compras:** `select * from shopping_items where bought_at is null` no topo,
 comprados de hoje colapsados embaixo. Input fixo no rodapé (alcance do dedo). Tocar no item
@@ -195,6 +216,11 @@ marca comprado — `update ... set bought_at = now(), bought_by = auth.uid()`. U
 dos últimos 7 dias embaixo. Concluir dispara o trigger e a próxima ocorrência aparece pelo
 realtime, sem código no cliente.
 
+**Tela de casa:** código de convite (share nativo no celular), lista de moradores, o próprio
+nome editável e o × para tirar alguém. Sem papel de admin — qualquer morador remove qualquer
+morador, a mesma regra dos itens. `household_members` ficou fora do realtime: a aba recarrega
+ao abrir, que é quando alguém quer ver quem entrou.
+
 **Realtime:** um `supabase.channel()` por tela, `on('postgres_changes')` → refaz o
 `select`. Refazer a query inteira em vez de aplicar o delta na lista: a lista tem dezenas de
 itens, não milhares, e elimina a classe de bug de estado divergente.
@@ -203,30 +229,73 @@ itens, não milhares, e elimina a classe de bug de estado divergente.
 
 ```bash
 npm install                       # já feito
-cp .env.example .env              # e preencha URL + anon key
+cp .env.example .env              # e preencha URL + publishable key
 npm run dev                       # http://localhost:5173
 npm run build                     # type-check + build de produção
 ```
 
 No celular, na mesma rede: `npm run dev -- --host` e abra o IP que ele mostrar.
-O magic link precisa ser aberto **no mesmo aparelho** onde você pediu o login.
+Os links de confirmação e de nova senha precisam ser abertos **no mesmo aparelho** onde
+você os pediu.
 
-## Fases
+## Estado
+
+v1 completo e verificado contra o banco de verdade em 23/08/2026.
 
 | Fase | Entrega | Estado |
 |---|---|---|
-| 0 | `schema.sql` + `check.sql` | escritos — falta rodar no SQL Editor |
-| 1 | Login por magic link + criar/entrar na casa | pronto |
-| 2 | Lista de compras + realtime | pronto |
-| 3 | Tarefas + recorrência | pronto |
-| 4 | PWA (manifest + ícones) | pronto — falta o deploy |
+| 0 | `schema.sql` + `check.sql` | rodados, checks passando |
+| 1 | Login por e-mail e senha, criar conta, esqueci a senha + criar/entrar na casa | funcionando |
+| 2 | Lista de compras + realtime | funcionando entre dois navegadores |
+| 3 | Tarefas + recorrência | trigger gera a próxima ocorrência via realtime |
+| 4 | PWA (manifest + ícones) | build gera o service worker |
+| 5 | Aba casa (moradores) + sessão longa | código pronto; falta rodar a [migration 002](supabase/migrations/002-gerenciar-moradores.sql) e ajustar o JWT expiry |
 
-Tudo de 1 a 4 compila (`npm run build` passa), mas nada foi exercitado contra um
-banco de verdade ainda: o primeiro `npm run dev` com `.env` preenchido é o teste real.
+Falta o deploy. A instalação como PWA no celular só dá para validar em HTTPS —
+`localhost` é a única exceção, e o IP da rede local não serve.
 
-Depois disso, e só se a casa estiver realmente usando: estoque, melhorias, push, despesas.
-Módulo que ninguém abre é dado morto — estoque é o candidato mais provável a isso, por isso
-ficou fora do v1.
+O que vem depois está em [ROADMAP.md](ROADMAP.md), com o gatilho de cada item.
+
+## Deploy
+
+Vercel serve só arquivo estático: não há função, não há servidor, não há cold start.
+
+1. `git init && git add . && git commit` — o [.gitignore](.gitignore) já barra `.env` e `dist`.
+2. Sobe para o GitHub e importa o repo na Vercel. Ela detecta Vite sozinha.
+3. **Environment Variables** na Vercel: `VITE_SUPABASE_URL` e `VITE_SUPABASE_PUBLISHABLE_KEY`,
+   os mesmos valores do `.env`. Sem isso o build passa e o app quebra em branco.
+4. Supabase → Authentication → URL Configuration: troca a **Site URL** para a URL da Vercel
+   e mantém `http://localhost:5173/**` nas **Redirect URLs**, senão você perde o login local.
+
+O passo 4 é o que quebra em produção depois de tudo funcionar na sua máquina.
+
+## Sessão
+
+A meta é ninguém ter que digitar a senha de novo. Não há cookie no caminho: o supabase-js
+guarda o token no `localStorage` do aparelho e o renova sozinho.
+
+Supabase → **Authentication** → **Sessions**:
+
+| Campo | Valor | Efeito |
+|---|---|---|
+| Access token (JWT) expiry | `604800` — 1 semana, o máximo | O app abre já autenticado, mesmo com sinal ruim. Padrão é 3600. |
+| Time-box user sessions | vazio | A sessão não morre de velha. |
+| Inactivity timeout | vazio | Passar um mês sem abrir não desloga. |
+
+Os dois últimos já vêm vazios no free tier: é o padrão, não mexa. O único que muda de fato é
+o JWT expiry. O refresh token não expira sozinho, então a sessão dura até alguém deslogar.
+
+Em **Authentication → Sign In / Providers → Email**, `Email OTP expiration` é o prazo para
+clicar no link que chegou por e-mail (padrão 1h), não o prazo da sessão. 86400 (24h) ajuda
+quem só abre o e-mail à noite.
+
+**O que ainda desloga, e nenhuma configuração resolve:**
+
+- **iPhone usando pelo navegador.** O Safari apaga o `localStorage` de um site depois de ~7
+  dias sem visita. Instalado na tela de início, o PWA fica de fora dessa limpeza — é o
+  argumento mais forte para todo mundo instalar em vez de usar pelo link.
+- **Aparelho novo, aba anônima, limpar dados do navegador.** O token é deste aparelho.
+- **"sair desta conta neste aparelho"**, na aba casa. O único jeito de deslogar de propósito.
 
 ## Verificação
 
@@ -236,7 +305,9 @@ ficou fora do v1.
 - tarefa concluída sem `recurrence` não gera nada;
 - concluir com 3 semanas de atraso não cria tarefa com data no passado;
 - usuário da casa B não lê `shopping_items` da casa A (o teste que importa: RLS furada é
-  vazamento de dados, não bug de tela).
+  vazamento de dados, não bug de tela);
+- morador da casa B não remove nem renomeia morador da casa A, e dentro da mesma casa cada
+  um só muda o próprio nome.
 
 Sem framework de teste, sem CI. Se um dia houver lógica de verdade no cliente, aí entra
 um `vitest`.

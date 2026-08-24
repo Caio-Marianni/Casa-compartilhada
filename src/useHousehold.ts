@@ -7,6 +7,13 @@ export type Member = { user_id: string; display_name: string }
 export function useHousehold() {
   const [session, setSession] = useState<Session | null>(null)
   const [authReady, setAuthReady] = useState(false)
+  // O link de "esqueci a senha" volta com type=recovery no hash. Lido de forma
+  // síncrona no primeiro render porque o supabase-js apaga o hash assim que troca o
+  // token pela sessão — depois disso recuperação e login normal ficam idênticos, e a
+  // pessoa cairia direto no app sem nunca escolher a senha nova.
+  const [recovering, setRecovering] = useState(
+    () => new URLSearchParams(location.hash.slice(1)).get('type') === 'recovery',
+  )
   const [loaded, setLoaded] = useState(false)
   const [house, setHouse] = useState<House | null>(null)
   const [members, setMembers] = useState<Member[]>([])
@@ -14,7 +21,10 @@ export function useHousehold() {
   // onAuthStateChange já dispara INITIAL_SESSION no mount: uma fonte de verdade só,
   // sem corrida entre getSession() e o listener.
   useEffect(() => {
-    const { data } = supabase.auth.onAuthStateChange((_event, s) => {
+    const { data } = supabase.auth.onAuthStateChange((event, s) => {
+      // Cinto e suspensório com a leitura do hash acima: o evento é o caminho normal,
+      // mas ele dispara no _initialize() e pode chegar antes deste listener existir.
+      if (event === 'PASSWORD_RECOVERY') setRecovering(true)
       setSession(s)
       setAuthReady(true)
     })
@@ -48,5 +58,16 @@ export function useHousehold() {
     [members],
   )
 
-  return { session, ready: authReady && loaded, house, members, nameOf, refresh }
+  return {
+    session,
+    ready: authReady && loaded,
+    house,
+    members,
+    nameOf,
+    refresh,
+    recovering,
+    // Sem useCallback: ninguém usa isto em array de dependência, e hook dentro do
+    // objeto de retorno quebra no dia em que alguém puser um early return aí em cima.
+    doneRecovering: () => setRecovering(false),
+  }
 }
