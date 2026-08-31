@@ -85,9 +85,9 @@ export function Household({
   return (
     <div className="flex flex-1 flex-col gap-6 px-4 pb-10">
       <section className="card p-4">
-        <h2 className="text-xs uppercase tracking-wide text-slate-500">convite</h2>
-        <p className="mt-1 font-mono text-2xl tracking-widest">{house.invite_code}</p>
-        <p className="mt-1 text-xs text-slate-500">
+        <h2 className="label">convite</h2>
+        <p className="mt-1 font-mono text-2xl tracking-widest text-acc">{house.invite_code}</p>
+        <p className="mt-2 text-xs text-mut">
           Quem tiver este código entra na casa e vê tudo. Só passe para quem mora aqui.
         </p>
         <button onClick={() => void convidar()} className="btn mt-3 w-full">
@@ -96,15 +96,13 @@ export function Household({
       </section>
 
       <section>
-        <h2 className="mb-2 text-xs uppercase tracking-wide text-slate-500">
-          moradores · {members.length}
-        </h2>
+        <h2 className="label mb-2 block">moradores · {members.length}</h2>
         <ul className="space-y-2">
           {eu && (
             <li className="card p-3">
               <label
                 htmlFor="meu-nome"
-                className="mb-1 block text-xs text-slate-500"
+                className="label mb-1 block"
               >
                 você{email && ` · ${email}`}
               </label>
@@ -120,7 +118,7 @@ export function Household({
               />
               <button
                 onClick={() => void remover(eu)}
-                className="mt-3 text-sm text-red-400"
+                className="mt-3 text-sm text-danger"
               >
                 sair da casa
               </button>
@@ -133,7 +131,7 @@ export function Household({
               <button
                 onClick={() => void remover(m)}
                 aria-label={`tirar ${m.display_name} da casa`}
-                className="px-2 text-xl text-slate-600"
+                className="px-2 text-xl text-mut opacity-60"
               >
                 ×
               </button>
@@ -141,7 +139,7 @@ export function Household({
           ))}
 
           {outros.length === 0 && (
-            <li className="py-6 text-center text-sm text-slate-500">
+            <li className="py-6 text-center text-sm text-mut">
               Só você por aqui. Manda o código para o resto da casa.
             </li>
           )}
@@ -150,7 +148,7 @@ export function Household({
 
       <button
         onClick={() => void supabase.auth.signOut()}
-        className="self-start text-sm text-slate-500 underline"
+        className="self-start text-sm text-mut underline"
       >
         sair desta conta neste aparelho
       </button>

@@ -41,7 +41,6 @@ create table shopping_items (
   id           uuid primary key default gen_random_uuid(),
   household_id uuid not null references households(id) on delete cascade,
   name         text not null check (length(trim(name)) > 0),
-  qty          text,                                   -- texto livre: "2 caixas", "1 kg"
   added_by     uuid not null default auth.uid() references auth.users(id),
   bought_at    timestamptz,                            -- null = pendente
   bought_by    uuid references auth.users(id),

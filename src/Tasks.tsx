@@ -104,9 +104,9 @@ export function Tasks({
   return (
     <div className="flex flex-1 flex-col">
       <ul className="flex-1 space-y-2 px-4 pb-44">
-        {!ready && <p className="py-8 text-center text-slate-500">carregando…</p>}
+        {!ready && <p className="label py-8 text-center">carregando…</p>}
         {ready && agora.length === 0 && (
-          <p className="py-8 text-center text-slate-500">Nada para hoje.</p>
+          <p className="py-8 text-center text-sm text-mut">Nada para hoje.</p>
         )}
 
         {agora.map((t) => (
@@ -120,9 +120,7 @@ export function Tasks({
         ))}
 
         {proximas.length > 0 && (
-          <li className="pt-6 pb-1 text-xs uppercase tracking-wide text-slate-500">
-            próximas
-          </li>
+          <li className="label pt-6 pb-2">próximas</li>
         )}
         {proximas.map((t) => (
           <Linha
@@ -139,7 +137,7 @@ export function Tasks({
           <li className="pt-6 pb-1">
             <button
               onClick={() => setVerFeitas(!verFeitas)}
-              className="text-xs uppercase tracking-wide text-slate-500"
+              className="label"
             >
               {verFeitas ? '▾' : '▸'} {feitas.length} concluída
               {feitas.length > 1 ? 's' : ''} · {DIAS_VISIVEIS} dias
@@ -152,19 +150,19 @@ export function Tasks({
               <button
                 onClick={() => void desfazer(t)}
                 aria-label={`desmarcar ${t.title}`}
-                className="size-6 shrink-0 rounded-md bg-emerald-600 text-center text-sm leading-6"
+                className="size-6 shrink-0 rounded-md bg-ok text-center text-sm leading-6 text-on-ok"
               >
                 ✓
               </button>
               <span className="flex-1 line-through">{t.title}</span>
-              <span className="text-xs text-slate-500">{nameOf(t.done_by)}</span>
+              <span className="label">{nameOf(t.done_by)}</span>
             </li>
           ))}
       </ul>
 
       <form
         onSubmit={add}
-        className="fixed inset-x-0 bottom-0 mx-auto max-w-md space-y-2 border-t border-slate-800 bg-slate-950/95 p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] backdrop-blur"
+        className="fixed inset-x-0 bottom-0 mx-auto max-w-md space-y-2 border-t-2 border-rule bg-surf/95 p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] backdrop-blur"
       >
         {open && (
           <div className="flex gap-2 text-sm">
@@ -206,7 +204,7 @@ export function Tasks({
             type="button"
             onClick={() => setOpen(!open)}
             aria-label="mais opções"
-            className="rounded-xl border border-slate-800 px-3 text-slate-400"
+            className="rounded-xl border-2 border-rule px-3 text-mut"
           >
             {open ? '▾' : '▸'}
           </button>
@@ -240,17 +238,19 @@ function Linha({
 }) {
   const atrasada = !futura && t.due_date != null && t.due_date < hoje()
   return (
-    <li className={`card flex items-center gap-3 px-4 py-3 ${futura ? 'opacity-60' : ''}`}>
+    <li
+      className={`flex items-center gap-3 border-b border-rule py-3 ${futura ? 'opacity-60' : ''}`}
+    >
       <button
         onClick={onConcluir}
         aria-label={`concluir ${t.title}`}
-        className="size-6 shrink-0 rounded-md border-2 border-slate-600 active:bg-emerald-600"
+        className="size-6 shrink-0 rounded-md border-2 border-mut active:bg-ok"
       />
       <div className="flex-1">
         <span className="text-base">{t.title}</span>
-        <span className="block text-xs text-slate-500">
+        <span className="label mt-0.5 block">
           {t.due_date && (
-            <span className={atrasada ? 'font-medium text-red-400' : ''}>
+            <span className={atrasada ? 'text-danger' : ''}>
               {ddmm(t.due_date)}
               {atrasada && ' · atrasada'}
             </span>
@@ -264,7 +264,7 @@ function Linha({
       <button
         onClick={onRemover}
         aria-label={`apagar ${t.title}`}
-        className="px-2 text-xl text-slate-600"
+        className="px-2 text-xl text-mut opacity-60"
       >
         ×
       </button>

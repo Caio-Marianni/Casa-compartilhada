@@ -15,7 +15,7 @@ export default function App() {
   const [tab, setTab] = useState<(typeof ABAS)[number]>('compras')
   const [erro, setErro] = useState<string | null>(null)
 
-  if (!ready) return <p className="p-8 text-center text-slate-500">carregando…</p>
+  if (!ready) return <p className="label p-8 text-center">carregando…</p>
   // Antes do !session de propósito: numa recuperação a sessão JÁ existe, e sem esta
   // linha a pessoa entraria no app com a senha antiga ainda valendo.
   if (recovering) return <NovaSenha onDone={doneRecovering} />
@@ -27,7 +27,7 @@ export default function App() {
       {erro && (
         <button
           onClick={() => setErro(null)}
-          className="fixed inset-x-0 top-0 z-50 bg-red-900/95 px-4 py-3 text-left text-sm text-red-100 backdrop-blur"
+          className="fixed inset-x-0 top-0 z-50 bg-danger px-4 py-3 text-left text-sm text-bg backdrop-blur"
         >
           {erro}
           <span className="ml-2 opacity-60">· toque para fechar</span>
@@ -36,16 +36,20 @@ export default function App() {
 
       <header className="px-4 pb-3 pt-[calc(1rem+env(safe-area-inset-top))]">
         {/* Convite e "sair" moraram aqui até existir a aba casa; lá eles cabem melhor. */}
-        <h1 className="text-lg font-semibold leading-tight">{house.name}</h1>
+        {/* 22px de Farday tem a altura de maiúscula de uns 30px de sans — a fonte
+            é que faz o peso aqui, não o tamanho. */}
+        <h1 className="display text-[22px]">{house.name}</h1>
       </header>
 
-      <nav className="mx-4 mb-4 flex gap-1 rounded-xl bg-slate-900 p-1 text-sm">
+      {/* Aba sublinhada em vez de pílula: a régua é o gesto que os dois sites usam
+          no lugar de sombra, e sobra contraste para o coral marcar onde você está. */}
+      <nav className="mx-4 mb-4 flex gap-5 border-b-2 border-rule">
         {ABAS.map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
-            className={`flex-1 rounded-lg py-2 capitalize ${
-              tab === t ? 'bg-slate-800 font-medium text-slate-100' : 'text-slate-400'
+            className={`label -mb-0.5 border-b-2 pb-2 ${
+              tab === t ? 'border-acc text-acc' : 'border-transparent'
             }`}
           >
             {t}

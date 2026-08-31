@@ -4,12 +4,19 @@
     <meta charset="UTF-8" />
     <!-- viewport-fit=cover: libera env(safe-area-inset-*) no iPhone -->
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="theme-color" content="#020617" />
+    <!-- Dois: a barra do navegador acompanha o tema do sistema junto com o app. -->
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f8f5ef" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#151815" />
     <link rel="apple-touch-icon" href="/icon-192.png" />
+    <!-- O nome da casa é a primeira coisa na tela; sem preload ele pisca em serifa. -->
+    <link rel="preload" href="/Farday-Regular.woff2" as="font" type="font/woff2" crossorigin />
     <title>Casa Compartilhada</title>
   </head>
   <body>
-    <div id="root"></div>
+    <!-- Se o JS não carregar (variável faltando, asset 404, service worker velho),
+         o React nunca roda e a tela fica branca sem dizer nada. Isto fica visível
+         até o createRoot substituir o conteúdo do #root. -->
+    <div id="root"><p style="font:16px/1.5 system-ui;color:#8a857c;padding:2rem;text-align:center">Não carregou. Abra o console (F12) — o erro está lá.</p></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

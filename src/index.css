@@ -1,29 +1,109 @@
 @import 'tailwindcss';
 
+/* Farday é fonte de logotipo: as junções são fios de cabelo e as maiúsculas medem
+   1.05em (uma sans qualquer mede ~0.7). Só o nome da casa e os títulos de tela
+   usam ela — abaixo de ~18px os fios somem na tela do celular. */
+@font-face {
+  font-family: 'Farday';
+  src: url('/Farday-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* Papel de dia, tinta de noite: um jogo de tokens, o sistema escolhe qual.
+   Toda cor da interface sai daqui — se você precisar escrever um hex dentro de um
+   componente, é sinal de que falta um token. */
 :root {
-  color-scheme: dark;
+  color-scheme: light dark;
+  --bg: #f8f5ef;
+  --surf: #ffffff;
+  --ink: #11110c;
+  --mut: #11110ca6;
+  --rule: #11110c2e;
+  --frame: #11110c;
+  --acc: #c2381a;
+  --on-acc: #ffffff;
+  --ok: #3f6b45;
+  --on-ok: #ffffff;
+  --danger: #a32617;
 }
 
-body {
-  margin: 0;
-  background: #020617;
-  color: #f1f5f9;
-  font-family: ui-sans-serif, system-ui, sans-serif;
-  -webkit-tap-highlight-color: transparent;
-  overscroll-behavior-y: none;
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #151815;
+    --surf: #1d211d;
+    --ink: #efede7;
+    --mut: #efede7a6;
+    --rule: #efede726;
+    /* moldura sólida no papel é déco; no preto vira caixa acesa, então perde alfa */
+    --frame: #efede74d;
+    --acc: #ef5a3c;
+    --on-acc: #151815;
+    --ok: #75b178;
+    --on-ok: #151815;
+    --danger: #f1806b;
+  }
 }
 
-/* Três classes em vez da mesma sopa de utilitários repetida em quatro telas. */
-.input {
-  @apply w-full rounded-xl border border-slate-800 bg-slate-900 px-4 py-3 text-base
-    text-slate-100 outline-none placeholder:text-slate-500 focus:border-slate-600;
+/* `inline` é o que faz `bg-acc` virar `background:var(--acc)` em vez de congelar o
+   valor de agora — sem isso o tema escuro não trocaria nada. */
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surf: var(--surf);
+  --color-ink: var(--ink);
+  --color-mut: var(--mut);
+  --color-rule: var(--rule);
+  --color-frame: var(--frame);
+  --color-acc: var(--acc);
+  --color-on-acc: var(--on-acc);
+  --color-ok: var(--ok);
+  --color-on-ok: var(--on-ok);
+  --color-danger: var(--danger);
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
-.btn {
-  @apply rounded-xl bg-emerald-600 px-4 py-3 font-medium text-white
-    active:bg-emerald-700 disabled:opacity-50;
+@layer base {
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: ui-sans-serif, system-ui, sans-serif;
+    -webkit-tap-highlight-color: transparent;
+    overscroll-behavior-y: none;
+  }
 }
 
-.card {
-  @apply rounded-2xl border border-slate-800 bg-slate-900/60;
+/* Em @layer components de propósito: assim `text-acc` numa aba ativa ganha do
+   `text-mut` que .label já traz. Fora da layer as duas empatam e a última vence. */
+@layer components {
+  /* 1.1: a fonte declara ascendente de 1.36em mas as maiúsculas param em 1.05em —
+     no padrão sobra um vão do tamanho de uma linha em branco acima do título. */
+  .display {
+    font-family: 'Farday', 'Bookman Old Style', Georgia, serif;
+    line-height: 1.1;
+    letter-spacing: 0.005em;
+  }
+
+  /* Contagens, seções, quem pediu. Maiúsculo + tracking é o que segura o miúdo
+     ao lado de uma fonte de cartaz sem virar mais um texto cinza. */
+  .label {
+    @apply font-mono text-[10px] uppercase tracking-[0.14em] text-mut;
+  }
+
+  .input {
+    @apply w-full rounded-xl border-2 border-rule bg-surf px-4 py-3 text-base
+      text-ink outline-none placeholder:text-mut focus:border-acc;
+  }
+
+  .btn {
+    @apply rounded-xl bg-acc px-4 py-3 font-medium text-on-acc
+      active:opacity-80 disabled:opacity-50;
+  }
+
+  /* Moldura, não preenchimento: no creme os dois tons de papel quase não se
+     distinguem, e a borda grossa é o gesto que veio do Verse. */
+  .card {
+    @apply rounded-2xl border-2 border-frame;
+  }
 }

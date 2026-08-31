@@ -47,7 +47,6 @@ export type Item = {
   id: string
   household_id: string
   name: string
-  qty: string | null
   added_by: string
   bought_at: string | null
   bought_by: string | null

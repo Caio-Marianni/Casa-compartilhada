@@ -83,7 +83,7 @@ export function Login() {
   if (aviso)
     return (
       <Centered title="Confira seu e-mail" subtitle={aviso}>
-        <p className="text-sm text-slate-500">
+        <p className="text-sm text-mut">
           Abra o link <em>neste mesmo aparelho</em>. Se não chegar em alguns minutos, veja o spam.
         </p>
         <Link onClick={() => troca('entrar')}>voltar para o login</Link>
@@ -126,7 +126,7 @@ export function Login() {
         <button className="btn" disabled={busy}>
           {busy ? 'um instante…' : t.acao}
         </button>
-        {erro && <p className="text-sm text-red-400">{erro}</p>}
+        {erro && <p className="text-sm text-danger">{erro}</p>}
       </form>
 
       <Link onClick={() => troca(modo === 'esqueci' ? 'entrar' : 'esqueci')}>
@@ -163,7 +163,7 @@ export function NovaSenha({ onDone }: { onDone: () => void }) {
         <button className="btn" disabled={busy}>
           {busy ? 'salvando…' : 'Salvar senha'}
         </button>
-        {erro && <p className="text-sm text-red-400">{erro}</p>}
+        {erro && <p className="text-sm text-danger">{erro}</p>}
       </form>
 
       <Link onClick={() => void supabase.auth.signOut()}>cancelar e sair</Link>
@@ -237,7 +237,7 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
         <button className="btn" disabled={busy}>
           {busy ? 'um instante…' : mode === 'join' ? 'Entrar' : 'Criar'}
         </button>
-        {error && <p className="text-sm text-red-400">{error}</p>}
+        {error && <p className="text-sm text-danger">{error}</p>}
       </form>
 
       <Link onClick={() => void supabase.auth.signOut()}>sair desta conta</Link>
@@ -306,7 +306,7 @@ function CampoSenha({
       <button
         type="button"
         onClick={() => setVisivel((v) => !v)}
-        className="absolute inset-y-0 right-0 px-4 text-sm text-slate-400"
+        className="absolute inset-y-0 right-0 px-4 text-sm text-mut"
       >
         {visivel ? 'ocultar' : 'mostrar'}
       </button>
@@ -316,7 +316,7 @@ function CampoSenha({
 
 function Link({ onClick, children }: { onClick: () => void; children: ReactNode }) {
   return (
-    <button onClick={onClick} className="mt-6 self-start text-sm text-slate-500 underline">
+    <button onClick={onClick} className="mt-6 self-start text-sm text-mut underline">
       {children}
     </button>
   )
@@ -335,10 +335,8 @@ function Toggle({
     <button
       type="button"
       onClick={onClick}
-      className={`flex-1 rounded-xl border px-3 py-2 ${
-        active
-          ? 'border-emerald-600 bg-emerald-600/15 text-emerald-300'
-          : 'border-slate-800 text-slate-400'
+      className={`flex-1 rounded-xl border-2 px-3 py-2 ${
+        active ? 'border-acc bg-acc/15 text-acc' : 'border-rule text-mut'
       }`}
     >
       {children}
@@ -357,8 +355,8 @@ function Centered({
 }) {
   return (
     <div className="mx-auto flex min-h-dvh max-w-sm flex-col justify-center px-6 py-10">
-      <h1 className="text-2xl font-semibold">{title}</h1>
-      <p className="mb-6 mt-1 text-slate-400">{subtitle}</p>
+      <h1 className="display text-[28px]">{title}</h1>
+      <p className="mb-6 mt-2 text-mut">{subtitle}</p>
       {children}
     </div>
   )
